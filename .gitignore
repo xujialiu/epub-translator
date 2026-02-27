@@ -1,6 +1,7 @@
 /temp
 /cache
 /format.json
+.worktrees/
 
 # Byte-compiled / optimized / DLL files
 __pycache__/
