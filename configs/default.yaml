@@ -1,0 +1,39 @@
+# Default configuration for translate.py
+# Override with --config <path> or --override key=value
+
+# --- Input / Output ---
+source_path: null            # required: path to source EPUB file
+target_path: null            # optional: output path (default: <source>_translated.epub)
+
+# --- Translation settings ---
+target_language: "Simplified Chinese"
+submit: "APPEND_BLOCK"       # REPLACE | APPEND_TEXT | APPEND_BLOCK
+concurrency: 4
+max_retries: 5
+max_group_tokens: 2600
+user_prompt: null
+
+# --- LLM configuration (base) ---
+llm:
+  key: ""
+  url: ""
+  model: ""
+  token_encoding: "o200k_base"
+  timeout: 360.0
+  top_p: null
+  temperature: null
+  retry_times: 5
+  retry_interval_seconds: 6.0
+  extra_body:
+    enable_thinking: false
+
+# --- Optional: dual-LLM overrides ---
+# If any field under translation/fill is non-null, a separate LLM is built
+# by merging these overrides onto the base llm config.
+translation:
+  temperature: null
+  top_p: null
+
+fill:
+  temperature: null
+  top_p: null
