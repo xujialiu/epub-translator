@@ -48,6 +48,7 @@ class XMLStreamMapper:
             execute=execute,
             concurrency=concurrency,
         ):
+            callbacks.on_group_done()
             for origin, target in mapping_pairs:
                 origin_element = origin.head.root
                 if current_element is None:
@@ -67,6 +68,12 @@ class XMLStreamMapper:
 
         if current_element is not None:
             yield current_element, mapping_buffer
+
+    def count_groups(self, element: Element, callbacks: Callbacks) -> int:
+        count = 0
+        for _ in self._split_into_serial_groups(iter([element]), callbacks):
+            count += 1
+        return count
 
     def _split_into_serial_groups(self, elements: Iterable[Element], callbacks: Callbacks):
         def generate():

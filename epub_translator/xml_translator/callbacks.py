@@ -18,6 +18,7 @@ class Callbacks:
     interrupt_translated_text_segments: Callable[[Iterable[TextSegment]], Iterable[TextSegment]]
     interrupt_block_element: Callable[[Element], Element]
     on_fill_failed: Callable[[FillFailedEvent], None]
+    on_group_done: Callable[[], None]
 
 
 def warp_callbacks(
@@ -25,10 +26,12 @@ def warp_callbacks(
     interrupt_translated_text_segments: Callable[[Iterable[TextSegment]], Iterable[TextSegment]] | None,
     interrupt_block_element: Callable[[Element], Element] | None,
     on_fill_failed: Callable[[FillFailedEvent], None] | None,
+    on_group_done: Callable[[], None] | None = None,
 ) -> Callbacks:
     return Callbacks(
         interrupt_source_text_segments=interrupt_source_text_segments or (lambda x: x),
         interrupt_translated_text_segments=interrupt_translated_text_segments or (lambda x: x),
         interrupt_block_element=interrupt_block_element or (lambda x: x),
         on_fill_failed=on_fill_failed or (lambda event: None),
+        on_group_done=on_group_done or (lambda: None),
     )

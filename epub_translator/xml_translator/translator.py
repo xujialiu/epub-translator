@@ -47,6 +47,19 @@ class XMLTranslator:
             max_group_score=max_group_score,
         )
 
+    def count_groups(
+        self,
+        element: Element,
+        interrupt_source_text_segments: Callable[[Iterable[TextSegment]], Iterable[TextSegment]] | None = None,
+    ) -> int:
+        callbacks = warp_callbacks(
+            interrupt_source_text_segments=interrupt_source_text_segments,
+            interrupt_translated_text_segments=None,
+            interrupt_block_element=None,
+            on_fill_failed=None,
+        )
+        return self._stream_mapper.count_groups(element, callbacks)
+
     def translate_element(
         self,
         task: TranslationTask[T],
@@ -55,6 +68,7 @@ class XMLTranslator:
         interrupt_translated_text_segments: Callable[[Iterable[TextSegment]], Iterable[TextSegment]] | None = None,
         interrupt_block_element: Callable[[Element], Element] | None = None,
         on_fill_failed: Callable[[FillFailedEvent], None] | None = None,
+        on_group_done: Callable[[], None] | None = None,
     ) -> tuple[Element, T]:
         for translated in self.translate_elements(
             tasks=((task),),
@@ -63,6 +77,7 @@ class XMLTranslator:
             interrupt_translated_text_segments=interrupt_translated_text_segments,
             interrupt_block_element=interrupt_block_element,
             on_fill_failed=on_fill_failed,
+            on_group_done=on_group_done,
         ):
             return translated
 
@@ -76,6 +91,7 @@ class XMLTranslator:
         interrupt_translated_text_segments: Callable[[Iterable[TextSegment]], Iterable[TextSegment]] | None = None,
         interrupt_block_element: Callable[[Element], Element] | None = None,
         on_fill_failed: Callable[[FillFailedEvent], None] | None = None,
+        on_group_done: Callable[[], None] | None = None,
     ) -> Generator[tuple[Element, T], None, None]:
         element2task: dict[int, TranslationTask[T]] = {}
         callbacks = warp_callbacks(
@@ -83,6 +99,7 @@ class XMLTranslator:
             interrupt_translated_text_segments=interrupt_translated_text_segments,
             interrupt_block_element=interrupt_block_element,
             on_fill_failed=on_fill_failed,
+            on_group_done=on_group_done,
         )
 
         def generate_elements():

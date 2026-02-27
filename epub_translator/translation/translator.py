@@ -1,3 +1,4 @@
+import threading
 from collections.abc import Callable, Generator
 from dataclasses import dataclass
 from enum import Enum, auto
@@ -77,24 +78,50 @@ def translate(
         # mimetype should be the first file in the EPUB ZIP
         zip.migrate(Path("mimetype"))
 
-        total_chapters = sum(1 for _, _ in search_spine_paths(zip))
         toc_list, toc_context = read_toc(zip)
         metadata_fields, metadata_context = read_metadata(zip)
 
-        # Calculate weights: TOC (5%), Metadata (5%), Chapters (90%)
-        toc_has_items = len(toc_list) > 0
-        metadata_has_items = len(metadata_fields) > 0
-        total_items = (1 if toc_has_items else 0) + (1 if metadata_has_items else 0) + total_chapters
+        interrupter = XMLInterrupter()
 
-        if total_items == 0:
+        # Materialize all tasks so we can count groups per task for fine-grained progress
+        all_tasks = list(
+            _generate_tasks_from_book(
+                zip=zip,
+                toc_list=toc_list,
+                toc_context=toc_context,
+                metadata_fields=metadata_fields,
+                metadata_context=metadata_context,
+                submit=submit,
+            )
+        )
+
+        if not all_tasks:
             return
 
-        interrupter = XMLInterrupter()
-        toc_weight = 0.05 if toc_has_items else 0
-        metadata_weight = 0.05 if metadata_has_items else 0
-        chapters_weight = 1.0 - toc_weight - metadata_weight
-        progress_per_chapter = chapters_weight / total_chapters if total_chapters > 0 else 0
+        # Count groups per task to calculate per-group progress weight
+        task_group_counts: list[int] = []
+        for task in all_tasks:
+            group_count = translator.count_groups(
+                element=task.element,
+                interrupt_source_text_segments=interrupter.interrupt_source_text_segments,
+            )
+            # Ensure at least 1 so every task contributes some progress
+            task_group_counts.append(max(group_count, 1))
+
+        total_groups = sum(task_group_counts)
+        progress_per_group = 1.0 / total_groups if total_groups > 0 else 0.0
+
+        # Thread-safe progress tracking (on_group_done may be called from worker threads)
+        progress_lock = threading.Lock()
         current_progress = 0.0
+
+        def on_group_done() -> None:
+            nonlocal current_progress
+            if on_progress is None:
+                return
+            with progress_lock:
+                current_progress += progress_per_group
+                on_progress(min(current_progress, 1.0))
 
         for translated_elem, context in translator.translate_elements(
             concurrency=concurrency,
@@ -102,14 +129,8 @@ def translate(
             interrupt_translated_text_segments=interrupter.interrupt_translated_text_segments,
             interrupt_block_element=interrupter.interrupt_block_element,
             on_fill_failed=on_fill_failed,
-            tasks=_generate_tasks_from_book(
-                zip=zip,
-                toc_list=toc_list,
-                toc_context=toc_context,
-                metadata_fields=metadata_fields,
-                metadata_context=metadata_context,
-                submit=submit,
-            ),
+            on_group_done=on_group_done,
+            tasks=iter(all_tasks),
         ):
             if context.element_type == _ElementType.TOC:
                 translated_elem = unwrap_french_quotes(translated_elem)
@@ -117,19 +138,11 @@ def translate(
                 if context.toc_context is not None:
                     write_toc(zip, decoded_toc, context.toc_context)
 
-                current_progress += toc_weight
-                if on_progress:
-                    on_progress(current_progress)
-
             elif context.element_type == _ElementType.METADATA:
                 translated_elem = unwrap_french_quotes(translated_elem)
                 decoded_metadata = decode_metadata(translated_elem)
                 if context.metadata_context is not None:
                     write_metadata(zip, decoded_metadata, context.metadata_context)
-
-                current_progress += metadata_weight
-                if on_progress:
-                    on_progress(current_progress)
 
             elif context.element_type == _ElementType.CHAPTER:
                 if context.chapter_data is not None:
@@ -138,9 +151,9 @@ def translate(
                     with zip.replace(chapter_path) as target_file:
                         xml.save(target_file)
 
-                current_progress += progress_per_chapter
-                if on_progress:
-                    on_progress(current_progress)
+        # Ensure progress reaches 1.0 at the end
+        if on_progress and current_progress < 1.0:
+            on_progress(1.0)
 
 
 def _generate_tasks_from_book(
